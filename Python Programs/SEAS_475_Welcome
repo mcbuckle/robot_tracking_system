@@ -1,0 +1,83 @@
+import time
+from sense_hat import SenseHat
+from pycomm3 import LogixDriver
+
+# =================================================================
+# --- SETTINGS (The 'Tinker' Zone) -------------------------------
+# This is where students use VIM to modify the system's "DNA"
+# =================================================================
+PLC_IP     = '192.168.6.41'           # IP address of the L16ER PLC
+START_TAG  = 'Program:MainProgram.Trigger_Wave'         # PLC tag we "Pulse" to start the robot
+FINISH_TAG = 'Program:MainProgram.Robot_Finished'      # PLC tag the robot sets when done
+# =================================================================
+
+# Initialize the Sense Hat hardware
+sense = SenseHat()
+sense.clear() # Turn off all LEDs to start with a blank canvas
+
+def main():
+    # -------------------------------------------------------------
+    # STAGE 1: HUMAN INTERFACE (The CLI)
+    # -------------------------------------------------------------
+    print("====================================================")
+    print("   SEAS 475: INDUSTRIAL SYSTEMS INTEGRATION         ")
+    print("   Project: The Raspberry Pi to Robot Handshake     ")
+    print("====================================================")
+
+    # Prompt the student for their name in the Terminal
+    student_name = input("\nPlease enter your name to begin: ")
+
+    # -------------------------------------------------------------
+    # STAGE 2: THE EDGE (Sense Hat)
+    # -------------------------------------------------------------
+    print(f"\n[EDGE] Sending greeting to Sense Hat...")
+    # Scroll the welcome message. Green color = [Red, Green, Blue] (0-255)
+    sense.show_message(f"Welcome {student_name}!", 
+                       scroll_speed=0.05, 
+                       text_colour=[255, 255, 0])
+
+    # -------------------------------------------------------------
+    # STAGE 3: THE NETWORK (PLC Communication)
+    # -------------------------------------------------------------
+    print(f"[NETWORK] Connecting to PLC at {PLC_IP}...")
+    
+    # 'LogixDriver' handles the Ethernet/IP (CIP) protocol for us automatically
+    with LogixDriver(PLC_IP) as plc:
+        
+        # --- THE START PULSE ---
+        # We send a "Momentary" signal. We turn it ON, wait, then turn it OFF.
+        # This prevents the robot from re-triggering accidentally.
+        print(f"[PLC] Pulsing '{START_TAG}' HIGH for 0.5 seconds...")
+        plc.write(START_TAG, True)
+        time.sleep(0.5) 
+        plc.write(START_TAG, False)
+        
+        # --- THE CLOSED-LOOP HANDSHAKE ---
+        # Now we enter a "Wait Loop." The script stays here until the 
+        # physical robot finishes its move and tells the PLC it is done.
+        print(f"[WAITING] Standing by for '{FINISH_TAG}' feedback...")
+        
+        finished = False
+        while not finished:
+            # Poll (Read) the PLC tag every 100ms
+            response = plc.read(FINISH_TAG)
+            
+            if response.value == True:
+                # If the bit is HIGH, the robot has finished its task
+                finished = True
+                print(f"[SUCCESS] {FINISH_TAG} detected. Robot cycle complete!")
+            else:
+                # Wait a tiny bit before checking again to avoid network lag
+                time.sleep(0.1)
+
+        # -------------------------------------------------------------
+        # STAGE 4: CLEANUP & RESET
+        # -------------------------------------------------------------
+        # Flash the Sense Hat Green [0, 255, 0] to signify a successful run
+        sense.clear(0, 255, 0) 
+        print("\n[FINISH] System reset. Program exiting normally.")
+        time.sleep(1.5)
+        sense.clear() # Clear LEDs for the next student
+
+if __name__ == "__main__":
+    main()
